@@ -4,7 +4,7 @@ import 'katex/dist/katex.min.css';
 import {questions,shuffled} from './questions.js';
 import './style.css';
 import {REPORT_URL, submitTeacherReport} from './reporting.js';
-
+import './leave-warning.js';
 const app=document.querySelector('#app');
 const base=import.meta.env.BASE_URL;
 const st={student:null,examCode:"",sessionId:"",leaves:[],lastLeave:0,startedAt:"",studentConfirmed:false,qs:[],index:0,answers:{},strokes:[],draft:[],engine:null,vocab:null,loading:false,recognized:null,ready:false,finished:false};
