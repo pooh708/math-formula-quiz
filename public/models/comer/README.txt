@@ -1,0 +1,1 @@
+The GitHub Actions build downloads encoder_int8.onnx, decoder_int8.onnx and vocab.json from the open-source ink-on v0.1.0 GitHub release. These binary model files are not included in this ZIP. The HTML file alone is NOT sufficient to run the recognizer.
