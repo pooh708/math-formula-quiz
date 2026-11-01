@@ -4,6 +4,7 @@ import 'katex/dist/katex.min.css';
 import {gradeLatex} from './grading.js';
 import {questions,shuffled} from './questions.js';
 import './style.css';
+import {REPORT_URL, submitTeacherReport} from './reporting.js';
 
 const app=document.querySelector('#app');
 const base=import.meta.env.BASE_URL;
@@ -49,34 +50,52 @@ function showQuestion(){
  <div class="actions"><button id="undo">마지막 획 지우기</button><button id="erase">전체 지우기</button><button id="recognize" class="primary">필기 인식하기</button></div>
  <p id="info" class="info">수식 AI 모델을 준비하는 중입니다.</p>
  <div id="recognized" class="recognition" hidden><div class="rec-title">AI가 읽은 수식</div><div id="preview" class="math-preview"></div>
- <p class="muted">내가 쓴 공식과 다르게 읽었다면 다시 쓰세요. 정답은 아직 표시되지 않습니다.</p>
+ <p class="muted">내가 쓴 공식과 다르게 읽었다면 아래 인식 오류 수정 버튼을 사용하거나 다시 쓰세요. 정답은 아직 표시되지 않습니다.</p>
+ <div id="quickfixes" class="actions" hidden></div>
  <details><summary>계속 잘못 인식되나요? (선택: 인식 결과 직접 수정)</summary><p class="tiny">이 기능은 AI 오류를 고치는 용도입니다. 사용한 경우 결과 파일에 '수정함'으로 기록됩니다.</p><input id="correction" placeholder="예: n(n-3)/2 또는 \\frac{n(n-3)}{2}"><button id="useCorrection">수정한 수식 적용</button></details>
  <div class="actions"><button id="retry">다시 쓰기</button><button id="confirm" class="primary">이 수식으로 답안 확정</button></div></div>
  </section><footer><button id="skip">인식이 안 되어 확인 보류하고 다음 문제</button> · 자동 채점 후 최종 확인 결과를 다운로드할 수 있습니다.</footer></main>`;
  const board=button('board'),ctx=board.getContext('2d');
  let drawing=false,cur=null;
+ function offerQuickFixes(){
+  const holder=button('quickfixes');if(!holder)return;holder.replaceChildren();
+  if(!st.recognized){holder.hidden=true;return;}
+  const raw=st.recognized.latex;const options=[];
+  // These options are corrections requested by the student, not automatic guesses.
+  if(/\\?\^\s*(?:\\?\{\s*0\s*\}|0)(?![0-9])/.test(raw)){
+    options.push(['위첨자 0을 °로 수정',()=>raw.replace(/\^\s*(?:\{\s*0\s*\}|0)(?![0-9])/g,'^{\\circ}')]);
+  }
+  if(q.id!==3 && /b/.test(raw)){
+    options.push(['잘못 인식된 b를 6으로 수정',()=>raw.replace(/b/g,'6')]);
+  }
+  for(const [label,change] of options){const b=document.createElement('button');b.textContent=label;b.onclick=()=>{
+    const corrected=change();st.recognized={latex:corrected,edited:true};renderMath(corrected,button('preview'));
+    setInfo('수정한 인식 결과를 확인한 뒤 답안을 확정하세요.');offerQuickFixes();
+  };holder.append(b);}
+  holder.hidden=options.length===0;
+ }
  function resized(){const width=board.clientWidth,height=board.clientHeight;board.width=Math.round(width*devicePixelRatio);board.height=Math.round(height*devicePixelRatio);ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);redraw();}
  function redraw(){ctx.clearRect(0,0,board.clientWidth,board.clientHeight);ctx.lineJoin='round';ctx.lineCap='round';ctx.strokeStyle='#14283f';ctx.lineWidth=3.4;
   for(const stroke of [...st.strokes,...(cur?[cur]:[])]){if(!stroke.points.length)continue;ctx.beginPath();stroke.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);});ctx.stroke();}}
  function pos(e){const r=board.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
  board.addEventListener('pointerdown',e=>{board.setPointerCapture(e.pointerId);drawing=true;cur={points:[pos(e)],lineWidth:3.4};redraw();});
  board.addEventListener('pointermove',e=>{if(!drawing)return;cur.points.push(pos(e));redraw();});
- function end(){if(drawing&&cur){st.strokes.push(cur);cur=null;drawing=false;st.recognized=null;button('recognized').hidden=true;redraw();}}
+ function end(){if(drawing&&cur){st.strokes.push(cur);cur=null;drawing=false;st.recognized=null;button('recognized').hidden=true;button('quickfixes').hidden=true;redraw();}}
  board.addEventListener('pointerup',end);board.addEventListener('pointercancel',end);
- button('undo').onclick=()=>{st.strokes.pop();st.recognized=null;button('recognized').hidden=true;redraw();};
- button('erase').onclick=()=>{st.strokes=[];st.recognized=null;button('recognized').hidden=true;redraw();};
+ button('undo').onclick=()=>{st.strokes.pop();st.recognized=null;button('recognized').hidden=true;button('quickfixes').hidden=true;redraw();};
+ button('erase').onclick=()=>{st.strokes=[];st.recognized=null;button('recognized').hidden=true;button('quickfixes').hidden=true;redraw();};
  button('recognize').onclick=async()=>{
   if(!st.ready){await initModel();if(!st.ready)return;}
   if(!isStrokeMeaningful(st.strokes)){setInfo('필기한 수식이 없습니다.',true);return;}
   setInfo('수식 AI 인식 중…');button('recognize').disabled=true;
   try{const input=preprocessStrokes(st.strokes);const result=await st.engine.recognize(input,st.vocab,'expression');
    if(!result.latex)throw Error('수식을 읽지 못했습니다.');
-   st.recognized={latex:result.latex,edited:false};button('recognized').hidden=false;renderMath(result.latex,button('preview'));setInfo('인식 결과를 확인한 후 답안을 확정하세요.');
+   st.recognized={latex:result.latex,edited:false};button('recognized').hidden=false;renderMath(result.latex,button('preview'));offerQuickFixes();setInfo('인식 결과를 확인한 후 답안을 확정하세요.');
   }catch(e){console.error(e);setInfo('이번 필기를 인식하지 못했습니다: '+e.message+' · 다시 쓰거나 확인 보류하세요.',true);}
   finally{button('recognize').disabled=false;}
  };
  button('retry').onclick=()=>{button('erase').click();setInfo('다시 작성해 주세요.');};
- button('useCorrection').onclick=()=>{const t=button('correction').value.trim();if(!t)return;st.recognized={latex:t,edited:true};renderMath(t,button('preview'));setInfo('수정 내용을 적용했습니다.');};
+ button('useCorrection').onclick=()=>{const t=button('correction').value.trim();if(!t)return;st.recognized={latex:t,edited:true};renderMath(t,button('preview'));offerQuickFixes();setInfo('수정 내용을 적용했습니다.');};
  button('confirm').onclick=()=>{
   if(!st.recognized)return;
   const judgement=gradeLatex(st.recognized.latex,q.answer);
@@ -95,9 +114,12 @@ function finish(){
  <section class="panel"><div class="result"><div><span>자동 판정 정답</span><strong>${correct} / 12</strong></div><div><span>확인 필요</span><strong>${review}문항</strong></div></div>
  <p class="warning">AI가 잘못 읽은 필기는 점수에 영향을 줄 수 있습니다. 아래 점수는 교사 확인 전 자동 판정이며, 공식 성적으로 확정하지 마세요.</p>
  <div class="tablewrap"><table><thead><tr><th>원래 문항</th><th>인식한 식</th><th>판정</th><th>원래 정답</th></tr></thead><tbody>${questions.map(q=>{let a=st.answers[q.id]||{};return `<tr><td>${q.id}</td><td class="formula">${esc(a.latex||'(없음)')}${a.edited?' (수정함)':''}</td><td>${a.status==='correct'?'정답':a.status==='incorrect'?'오답':'확인 필요'}</td><td>${esc(q.display)}</td></tr>`}).join('')}</tbody></table></div>
- <div class="actions"><button class="primary" id="export">성적표 CSV 다운로드</button><button id="print">결과 인쇄</button><button id="new">다시 시작</button></div>
- <p class="tiny">학생의 원본 필기는 브라우저 메모리에만 남습니다. 서버로 자동 전송하거나 교사에게 자동 제출하지 않습니다.</p>
+ <div class="actions"><button class="primary" id="sendTeacher">교사에게 시험 결과 제출</button><button id="export">성적표 CSV 다운로드</button><button id="print">결과 인쇄</button><button id="new">다시 시작</button></div>
+ <p id="sendInfo" class="info">${REPORT_URL?'교사에게 제출을 누르면 새 탭에서 전송 결과를 확인할 수 있습니다.':'교사용 수집 주소가 아직 연결되지 않았습니다. 설명서를 참고하세요.'}</p>
+ <p class="tiny">교사에게 제출 시 학급·번호·이름, 12문항의 인식 수식·채점 결과, 오답/확인필요 문항의 실제 필기 이미지를 전송합니다. 교사의 Google Drive와 스프레드시트에 보관되며 교사만 열람할 수 있도록 설정해야 합니다. 교사에게 제출 전까지 브라우저에만 저장됩니다.</p>
  </section></main>`;
+ button('sendTeacher').disabled=!REPORT_URL;
+ button('sendTeacher').onclick=()=>{try{submitTeacherReport(st,questions);button('sendInfo').textContent='제출 창에서 접수 완료 메시지가 표시되는지 확인하세요. 창을 닫기 전에 확인해야 합니다.';}catch(e){button('sendInfo').textContent='제출 준비 실패: '+e.message;}};
  button('export').onclick=exportCSV;
  button('print').onclick=()=>window.print();
  button('new').onclick=startScreen;

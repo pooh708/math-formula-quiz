@@ -92,6 +92,10 @@ const SAMPLES=[
 ];
 export function gradeLatex(actual, expected){
   try{
+    // A superscript zero is easily confused with a handwritten degree mark.
+    // Never silently reinterpret either meaning; ask the student to confirm.
+    if(/\\?\^\s*(?:\\?\{\s*0\s*\}|0)(?![0-9])/.test(actual))
+      return {status:'review',reason:'위첨자 0과 도(°) 기호를 구별할 수 없습니다. 필기를 확인하세요.'};
     const a=latexToMath(actual),b=latexToMath(expected);
     let nums=[];
     for(const vars of SAMPLES){
