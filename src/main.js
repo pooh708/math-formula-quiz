@@ -45,7 +45,7 @@ function showQuestion(){
  <div class="progress"><div style="width:${100*st.index/st.qs.length}%"></div></div>
  <section class="panel"><div class="qmeta">무작위 출제 · 원본 ${q.id}번 · 1점</div><h2>${esc(q.prompt)}</h2>
  ${q.image?`<img class="diagram" alt="삼각형 외각 그림" src="${base}triangle_original.png">`:''}
- <p class="muted">답안 작성칸에 공식 전체를 자유롭게 쓰세요. 분수를 나누어 적을 필요가 없습니다.</p>
+ <p class="muted">답안 작성칸에 공식을 자유롭게 쓰세요.</p>
  <div class="canvas-wrap"><canvas id="board" aria-label="마우스 필기 답안 작성칸"></canvas></div>
  <div class="actions"><button id="undo">마지막 획 지우기</button><button id="erase">전체 지우기</button><button id="recognize" class="primary">필기 인식하기</button></div>
  <p id="info" class="info">수식 AI 모델을 준비하는 중입니다.</p>
@@ -67,6 +67,9 @@ function showQuestion(){
   }
   if(q.id!==3 && /b/.test(raw)){
     options.push(['잘못 인식된 b를 6으로 수정',()=>raw.replace(/b/g,'6')]);
+  }
+  if([8,9,10,11,12].includes(q.id) && /(^|[^A-Za-z\\])v(?=$|[^A-Za-z])/.test(raw)){
+    options.push(['잘못 인식된 v를 r로 수정',()=>raw.replace(/(^|[^A-Za-z\\])v(?=$|[^A-Za-z])/g,'$1r')]);
   }
   for(const [label,change] of options){const b=document.createElement('button');b.textContent=label;b.onclick=()=>{
     const corrected=change();st.recognized={latex:corrected,edited:true};renderMath(corrected,button('preview'));
