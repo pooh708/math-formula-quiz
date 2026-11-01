@@ -1,14 +1,13 @@
 import {InferenceEngine,preprocessStrokes,isStrokeMeaningful,loadVocab} from 'ink-on/core';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import {gradeLatex} from './grading.js';
 import {questions,shuffled} from './questions.js';
 import './style.css';
 import {REPORT_URL, submitTeacherReport} from './reporting.js';
 
 const app=document.querySelector('#app');
 const base=import.meta.env.BASE_URL;
-const st={student:null,qs:[],index:0,answers:{},strokes:[],draft:[],engine:null,vocab:null,loading:false,recognized:null,ready:false,finished:false};
+const st={student:null,examCode:"",sessionId:"",leaves:[],lastLeave:0,startedAt:"",studentConfirmed:false,qs:[],index:0,answers:{},strokes:[],draft:[],engine:null,vocab:null,loading:false,recognized:null,ready:false,finished:false};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const renderMath=(latex,el)=>{try{katex.render(latex,el,{throwOnError:false,displayMode:true,strict:'ignore'});}catch(e){el.textContent=latex;}};
 const button=(id)=>document.getElementById(id);
@@ -17,13 +16,14 @@ function startScreen(){
  app.innerHTML=`<main class="shell"><header><div class="eyebrow">MATH · HANDWRITING QUIZ</div><h1>수학 공식 암기시험</h1><p>공식 전체를 한 칸에 마우스로 쓰는 12문항 쪽지시험입니다.</p></header>
  <section class="panel"><h2>시험 시작</h2><p class="muted">학생별 문항 순서가 자동으로 섞입니다. 로그인 없이 응시할 수 있습니다.</p>
  <div class="fields"><label>학급 <input id="classroom" placeholder="예: 1-3" maxlength="15" autocomplete="off"></label><label>번호 <input id="number" placeholder="예: 12" maxlength="10" autocomplete="off"></label><label>이름 <input id="name" placeholder="이름" maxlength="30" autocomplete="off"></label></div>
- <button class="primary" id="start">시험 시작</button><p class="tiny">이 파일은 무료 인식 모델을 학생 기기에서 실행합니다. 인터넷 접속과 모델 다운로드가 필요하며, 이름과 점수는 서버에 자동 수집되지 않습니다.</p>
+ <label>시험 참여 코드 (교사가 안내) <input id="examCode" type="password" placeholder="시험 참여 코드" autocomplete="off" maxlength="50"></label><div class="actions"><button class="primary" id="start">시험 시작</button></div><p class="tiny">한 문제씩 출제되며, AI가 읽은 답안만 확인할 수 있습니다. 실제 채점은 교사용 서버에서 처리합니다.</p>
  <p class="warning">시범 운영: 수식 인식 오류 가능성이 있습니다. 학생은 AI가 읽은 수식을 확인할 수 있고, 불확실한 답안은 교사가 다시 확인해야 합니다.</p></section>
  <footer>수학 공식 12문항 · 마우스/터치 필기 · 서버/API 이용료 없음</footer></main>`;
  button('start').onclick=()=>{
   const classroom=button('classroom').value.trim(),number=button('number').value.trim(),name=button('name').value.trim();
-  if(!classroom||!number||!name){alert('학급, 번호, 이름을 입력하세요.');return;}
-  st.student={classroom,number,name};st.qs=shuffled(questions);st.index=0;st.answers={};st.finished=false;
+  const examCode=button('examCode').value.trim();
+  if(!classroom||!number||!name||!examCode){alert('학급, 번호, 이름, 시험 참여 코드를 입력하세요.');return;}
+  st.student={classroom,number,name};st.examCode=examCode;st.sessionId=crypto.randomUUID?.()||String(Date.now())+String(Math.random());st.startedAt=new Date().toISOString();st.leaves=[];st.lastLeave=0;st.qs=shuffled(questions);st.index=0;st.answers={};st.finished=false;
   showQuestion();initModel();
  };
 }
@@ -54,7 +54,7 @@ function showQuestion(){
  <div id="quickfixes" class="actions" hidden></div>
  <details><summary>계속 잘못 인식되나요? (선택: 인식 결과 직접 수정)</summary><p class="tiny">이 기능은 AI 오류를 고치는 용도입니다. 사용한 경우 결과 파일에 '수정함'으로 기록됩니다.</p><input id="correction" placeholder="예: n(n-3)/2 또는 \\frac{n(n-3)}{2}"><button id="useCorrection">수정한 수식 적용</button></details>
  <div class="actions"><button id="retry">다시 쓰기</button><button id="confirm" class="primary">이 수식으로 답안 확정</button></div></div>
- </section><footer><button id="skip">인식이 안 되어 확인 보류하고 다음 문제</button> · 자동 채점 후 최종 확인 결과를 다운로드할 수 있습니다.</footer></main>`;
+ </section><footer><button id="skip">인식이 안 되어 확인 보류하고 다음 문제</button> · 최종 채점은 교사용 서버에서 진행합니다.</footer></main>`;
  const board=button('board'),ctx=board.getContext('2d');
  let drawing=false,cur=null;
  function offerQuickFixes(){
@@ -101,37 +101,46 @@ function showQuestion(){
  button('useCorrection').onclick=()=>{const t=button('correction').value.trim();if(!t)return;st.recognized={latex:t,edited:true};renderMath(t,button('preview'));offerQuickFixes();setInfo('수정 내용을 적용했습니다.');};
  button('confirm').onclick=()=>{
   if(!st.recognized)return;
-  const judgement=gradeLatex(st.recognized.latex,q.answer);
-  st.answers[q.id]={latex:st.recognized.latex,edited:st.recognized.edited,status:judgement.status,reason:judgement.reason??'',image:board.toDataURL('image/png')};next();
+  st.answers[q.id]={latex:st.recognized.latex,edited:st.recognized.edited,reason:'',image:smallImage(board,st.strokes)};next();
  };
- button('skip').onclick=()=>{st.answers[q.id]={latex:'',edited:false,status:'review',reason:'학생이 인식 보류함',image:board.toDataURL('image/png')};next();};
+ button('skip').onclick=()=>{st.answers[q.id]={latex:'',edited:false,reason:'학생이 인식 보류함',image:smallImage(board,st.strokes)};next();};
  function next(){if(st.index<st.qs.length-1){st.index++;showQuestion();}else finish();}
  // Watch for CSS layout before canvas dimensioning
  requestAnimationFrame(resized);
  if(st.ready)setInfo('수식 AI 준비 완료 · 자유롭게 필기하세요.');
 }
+function smallImage(board,strokes){
+ if(!strokes.length)return '';
+ const c=document.createElement('canvas');c.width=560;c.height=210;
+ const ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,c.width,c.height);
+ ctx.drawImage(board,0,0,c.width,c.height);
+ return c.toDataURL('image/jpeg',0.65);
+}
 function finish(){
  st.finished=true;
- const done=Object.values(st.answers),correct=done.filter(x=>x.status==='correct').length,review=done.filter(x=>x.status==='review').length;
- app.innerHTML=`<main class="shell"><header><div class="eyebrow">수학 공식 암기시험 · 결과</div><h1>시험 제출 완료</h1><p>${esc(st.student.classroom)} · ${esc(st.student.number)}번 · ${esc(st.student.name)}</p></header>
- <section class="panel"><div class="result"><div><span>자동 판정 정답</span><strong>${correct} / 12</strong></div><div><span>확인 필요</span><strong>${review}문항</strong></div></div>
- <p class="warning">AI가 잘못 읽은 필기는 점수에 영향을 줄 수 있습니다. 아래 점수는 교사 확인 전 자동 판정이며, 공식 성적으로 확정하지 마세요.</p>
- <div class="tablewrap"><table><thead><tr><th>원래 문항</th><th>인식한 식</th><th>판정</th><th>원래 정답</th></tr></thead><tbody>${questions.map(q=>{let a=st.answers[q.id]||{};return `<tr><td>${q.id}</td><td class="formula">${esc(a.latex||'(없음)')}${a.edited?' (수정함)':''}</td><td>${a.status==='correct'?'정답':a.status==='incorrect'?'오답':'확인 필요'}</td><td>${esc(q.display)}</td></tr>`}).join('')}</tbody></table></div>
- <div class="actions"><button class="primary" id="sendTeacher">교사에게 시험 결과 제출</button><button id="export">성적표 CSV 다운로드</button><button id="print">결과 인쇄</button><button id="new">다시 시작</button></div>
- <p id="sendInfo" class="info">${REPORT_URL?'교사에게 제출을 누르면 새 탭에서 전송 결과를 확인할 수 있습니다.':'교사용 수집 주소가 아직 연결되지 않았습니다. 설명서를 참고하세요.'}</p>
- <p class="tiny">교사에게 제출 시 학급·번호·이름, 12문항의 인식 수식·채점 결과, 오답/확인필요 문항의 실제 필기 이미지를 전송합니다. 교사의 Google Drive와 스프레드시트에 보관되며 교사만 열람할 수 있도록 설정해야 합니다. 교사에게 제출 전까지 브라우저에만 저장됩니다.</p>
- </section></main>`;
+ // Do not show answers, computed scores, or grading decisions in the student browser.
+ app.innerHTML=`<main class="shell"><header><div class="eyebrow">수학 공식 암기시험 · 최종 제출</div><h1>12문항 작성 완료</h1><p>${esc(st.student.classroom)} · ${esc(st.student.number)}번 · ${esc(st.student.name)}</p></header>
+ <section class="panel"><h2>교사에게 답안을 제출하세요</h2>
+ <p class="muted">정답 및 채점 결과는 학생 화면에 공개되지 않습니다. 교사용 서버가 채점하며 오답·인식 불확실 답안의 원본 필기를 보관합니다.</p>
+ <p class="info">시험 중 화면 전환 감지: ${st.leaves.length}회 (부정행위 확정이 아닌 참고 기록)</p>
+ <div class="actions"><button id="sendTeacher" class="primary">교사에게 시험 결과 제출</button><button id="export">내 답안 CSV 백업</button></div>
+ <p id="sendInfo" class="info">${REPORT_URL?'제출 버튼을 누르고 새 탭의 접수 완료 메시지를 확인하세요.':'제출 주소가 설정되지 않았습니다. 교사에게 알려주세요.'}</p>
+ <p class="tiny">제출 후 새로 나타난 접수 결과 탭을 반드시 확인하세요. 페이지를 닫기 전에 전송 성공 여부를 확인해야 합니다.</p></section></main>`;
  button('sendTeacher').disabled=!REPORT_URL;
- button('sendTeacher').onclick=()=>{try{submitTeacherReport(st,questions);button('sendInfo').textContent='제출 창에서 접수 완료 메시지가 표시되는지 확인하세요. 창을 닫기 전에 확인해야 합니다.';}catch(e){button('sendInfo').textContent='제출 준비 실패: '+e.message;}};
+ button('sendTeacher').onclick=()=>{try{submitTeacherReport(st,questions);button('sendInfo').textContent='새 탭에서 접수 완료 메시지를 확인하세요. 화면이 열렸다는 사실만으로 접수가 보장되지는 않습니다.';}catch(e){button('sendInfo').textContent='제출 준비 실패: '+e.message;}};
  button('export').onclick=exportCSV;
- button('print').onclick=()=>window.print();
- button('new').onclick=startScreen;
 }
 function exportCSV(){
- const cells=[['학급','번호','이름','원문항','인식수식','결과','OCR수정여부','확인사항'],...questions.map(q=>{const a=st.answers[q.id];return [st.student.classroom,st.student.number,st.student.name,q.id,a.latex,a.status,a.edited?'예':'아니오',a.reason]})];
+ const cells=[['학급','번호','이름','원문항','인식수식','수정여부'],...questions.map(q=>{const a=st.answers[q.id]||{};return [st.student.classroom,st.student.number,st.student.name,q.id,a.latex||'',a.edited?'예':'아니오']})];
  const csv='\ufeff'+cells.map(row=>row.map(value=>'"'+String(value??'').replaceAll('"','""')+'"').join(',')).join('\r\n');
  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');
- link.href=url;link.download=`수학공식시험_${st.student.classroom}_${st.student.number}_${st.student.name}.csv`.replaceAll(/[\\/:*?"<>|]/g,'_');
- link.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+ link.href=url;link.download='my_math_answers.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
+function recordLeave(reason){
+ if(!st.student||st.finished||!st.startedAt)return;
+ const now=Date.now();if(now-st.lastLeave<1600)return;st.lastLeave=now;
+ st.leaves.push({time:new Date(now).toISOString(),questionId:st.qs[st.index]?.id||0,reason});
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)recordLeave('hidden_tab_or_app');});
+window.addEventListener('blur',()=>{if(!document.hidden)recordLeave('window_unfocused');});
 startScreen();
