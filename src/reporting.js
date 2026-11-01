@@ -1,6 +1,6 @@
 // Google Apps Script 웹앱 /exec 주소를 큰따옴표 안에 붙여넣으세요.
 // 예: export const REPORT_URL = 'https://script.google.com/macros/s/.../exec';
-export const REPORT_URL = '';
+export const REPORT_URL = 'https://script.google.com/macros/s/AKfycbwsxr8DaonGA7ey1Itf3BJKvp-rwdmCls3PLj7O-J9UkZawbLBYT-5IBoP7pkcEZmSi4g/exec';
 
 function validUrl(url){return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url);}
 export function submitTeacherReport(state,questions){
