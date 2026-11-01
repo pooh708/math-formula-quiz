@@ -3,10 +3,14 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import {questions,shuffled} from './questions.js';
 import './style.css';
-import {REPORT_URL, submitTeacherReport} from './reporting.js';
 import './leave-warning.js';
+import {REPORT_URL, submitTeacherReport} from './reporting.js';
+
 const app=document.querySelector('#app');
 const base=import.meta.env.BASE_URL;
+const DRAFT_KEY='math_quiz_v8_draft';
+function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify({student:st.student,examCode:st.examCode,sessionId:st.sessionId,startedAt:st.startedAt,leaves:st.leaves,qs:st.qs.map(q=>q.id),index:st.index,answers:st.answers,finished:st.finished}));}catch(e){console.warn('임시 저장 공간 부족',e);}}
+function restoreDraft(){try{const d=JSON.parse(sessionStorage.getItem(DRAFT_KEY)||'null');if(!d||!d.student||!d.examCode||!Array.isArray(d.qs)||d.qs.length!==12)return false;if(!confirm('이 브라우저 탭에 저장된 이전 시험을 이어서 진행하시겠습니까?'))return false;Object.assign(st,{student:d.student,examCode:d.examCode,sessionId:d.sessionId,startedAt:d.startedAt,leaves:d.leaves||[],qs:d.qs.map(id=>questions.find(q=>q.id===id)),index:d.index||0,answers:d.answers||{},finished:!!d.finished});if(st.finished)finish();else{showQuestion();initModel();}return true;}catch(e){return false;}}
 const st={student:null,examCode:"",sessionId:"",leaves:[],lastLeave:0,startedAt:"",studentConfirmed:false,qs:[],index:0,answers:{},strokes:[],draft:[],engine:null,vocab:null,loading:false,recognized:null,ready:false,finished:false};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const renderMath=(latex,el)=>{try{katex.render(latex,el,{throwOnError:false,displayMode:true,strict:'ignore'});}catch(e){el.textContent=latex;}};
@@ -23,7 +27,7 @@ function startScreen(){
   const classroom=button('classroom').value.trim(),number=button('number').value.trim(),name=button('name').value.trim();
   const examCode=button('examCode').value.trim();
   if(!classroom||!number||!name||!examCode){alert('학급, 번호, 이름, 시험 참여 코드를 입력하세요.');return;}
-  st.student={classroom,number,name};st.examCode=examCode;st.sessionId=crypto.randomUUID?.()||String(Date.now())+String(Math.random());st.startedAt=new Date().toISOString();st.leaves=[];st.lastLeave=0;st.qs=shuffled(questions);st.index=0;st.answers={};st.finished=false;
+  st.student={classroom,number,name};st.examCode=examCode.toUpperCase();st.sessionId=crypto.randomUUID?.()||String(Date.now())+String(Math.random());st.startedAt=new Date().toISOString();st.leaves=[];st.lastLeave=0;st.qs=shuffled(questions);st.index=0;st.answers={};st.finished=false;saveDraft();
   showQuestion();initModel();
  };
 }
@@ -104,7 +108,7 @@ function showQuestion(){
   st.answers[q.id]={latex:st.recognized.latex,edited:st.recognized.edited,reason:'',image:smallImage(board,st.strokes)};next();
  };
  button('skip').onclick=()=>{st.answers[q.id]={latex:'',edited:false,reason:'학생이 인식 보류함',image:smallImage(board,st.strokes)};next();};
- function next(){if(st.index<st.qs.length-1){st.index++;showQuestion();}else finish();}
+ function next(){if(st.index<st.qs.length-1){st.index++;saveDraft();showQuestion();}else{saveDraft();finish();}}
  // Watch for CSS layout before canvas dimensioning
  requestAnimationFrame(resized);
  if(st.ready)setInfo('수식 AI 준비 완료 · 자유롭게 필기하세요.');
@@ -117,7 +121,7 @@ function smallImage(board,strokes){
  return c.toDataURL('image/jpeg',0.65);
 }
 function finish(){
- st.finished=true;
+ st.finished=true;saveDraft();
  // Do not show answers, computed scores, or grading decisions in the student browser.
  app.innerHTML=`<main class="shell"><header><div class="eyebrow">수학 공식 암기시험 · 최종 제출</div><h1>12문항 작성 완료</h1><p>${esc(st.student.classroom)} · ${esc(st.student.number)}번 · ${esc(st.student.name)}</p></header>
  <section class="panel"><h2>교사에게 답안을 제출하세요</h2>
@@ -125,7 +129,7 @@ function finish(){
  <p class="info">시험 중 화면 전환 감지: ${st.leaves.length}회 (부정행위 확정이 아닌 참고 기록)</p>
  <div class="actions"><button id="sendTeacher" class="primary">교사에게 시험 결과 제출</button><button id="export">내 답안 CSV 백업</button></div>
  <p id="sendInfo" class="info">${REPORT_URL?'제출 버튼을 누르고 새 탭의 접수 완료 메시지를 확인하세요.':'제출 주소가 설정되지 않았습니다. 교사에게 알려주세요.'}</p>
- <p class="tiny">제출 후 새로 나타난 접수 결과 탭을 반드시 확인하세요. 페이지를 닫기 전에 전송 성공 여부를 확인해야 합니다.</p></section></main>`;
+ <p class="tiny">새 탭의 접수 결과를 확인하고, 표시된 개인 결과 조회 링크를 안전하게 보관하세요. 공개 전에는 정답이 보이지 않습니다. 접수 실패 시 이 페이지에서 다시 제출할 수 있습니다.</p></section></main>`;
  button('sendTeacher').disabled=!REPORT_URL;
  button('sendTeacher').onclick=()=>{try{submitTeacherReport(st,questions);button('sendInfo').textContent='새 탭에서 접수 완료 메시지를 확인하세요. 화면이 열렸다는 사실만으로 접수가 보장되지는 않습니다.';}catch(e){button('sendInfo').textContent='제출 준비 실패: '+e.message;}};
  button('export').onclick=exportCSV;
@@ -139,8 +143,8 @@ function exportCSV(){
 function recordLeave(reason){
  if(!st.student||st.finished||!st.startedAt)return;
  const now=Date.now();if(now-st.lastLeave<1600)return;st.lastLeave=now;
- st.leaves.push({time:new Date(now).toISOString(),questionId:st.qs[st.index]?.id||0,reason});
+ st.leaves.push({time:new Date(now).toISOString(),questionId:st.qs[st.index]?.id||0,reason});saveDraft();
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)recordLeave('hidden_tab_or_app');});
 window.addEventListener('blur',()=>{if(!document.hidden)recordLeave('window_unfocused');});
-startScreen();
+if(!restoreDraft())startScreen();
