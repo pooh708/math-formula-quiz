@@ -1,5 +1,6 @@
 // Replace with the deployed Apps Script /exec URL. Never add a teacher password here.
-export const REPORT_URL = '';
+export const REPORT_URL = 'https://script.google.com/macros/s/AKfycbwsxr8DaonGA7ey1Itf3BJKvp-rwdmCls3PLj7O-J9UkZawbLBYT-5IBoP7pkcEZmSi4g/exec
+';
 function validUrl(url){return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url);}
 export function submitTeacherReport(state,questions){
  if(!validUrl(REPORT_URL))throw Error('src/reporting.js에 웹 앱 /exec 주소를 설정하세요.');
