@@ -17,8 +17,8 @@ const renderMath=(latex,el)=>{try{katex.render(latex,el,{throwOnError:false,disp
 const button=(id)=>document.getElementById(id);
 const setInfo=(message,err=false)=>{const el=button('info');if(el){el.textContent=message;el.className='info '+(err?'error':'');}};
 function startScreen(){
- app.innerHTML=`<main class="shell"><header><div class="eyebrow">MATH · HANDWRITING QUIZ</div><h1>평면도형 공식 암기시험</h1><p style="font-size:14px;color:#888;
-text-align:center;margin:4px 0 14px;">
+ app.innerHTML=`<main class="shell"><header style="text-align:center;"><div class="eyebrow">MATH · HANDWRITING QUIZ</div><h1>평면도형 공식 암기시험</h1><p style="font-size:16px;color:#888;
+text-align:center;margin:4px 0 16px;">
   by Sujin
 </p>
 <p><p>공식 전체를 한 칸에 마우스로 쓰는 12문항 쪽지시험입니다.</p></header>
