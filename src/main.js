@@ -17,7 +17,11 @@ const renderMath=(latex,el)=>{try{katex.render(latex,el,{throwOnError:false,disp
 const button=(id)=>document.getElementById(id);
 const setInfo=(message,err=false)=>{const el=button('info');if(el){el.textContent=message;el.className='info '+(err?'error':'');}};
 function startScreen(){
- app.innerHTML=`<main class="shell"><header><div class="eyebrow">MATH · HANDWRITING QUIZ</div><h1>수학 공식 암기시험</h1><p>공식 전체를 한 칸에 마우스로 쓰는 12문항 쪽지시험입니다.</p></header>
+ app.innerHTML=`<main class="shell"><header><div class="eyebrow">MATH · HANDWRITING QUIZ</div><h1>평면도형 공식 암기시험</h1><p style="font-size:14px;color:#888;
+text-align:center;margin:4px 0 14px;">
+  by Sujin
+</p>
+<p><p>공식 전체를 한 칸에 마우스로 쓰는 12문항 쪽지시험입니다.</p></header>
  <section class="panel"><h2>시험 시작</h2><p class="muted">학생별 문항 순서가 자동으로 섞입니다. 로그인 없이 응시할 수 있습니다.</p>
  <div class="fields"><label>학급 <input id="classroom" placeholder="예: 1-3" maxlength="15" autocomplete="off"></label><label>번호 <input id="number" placeholder="예: 12" maxlength="10" autocomplete="off"></label><label>이름 <input id="name" placeholder="이름" maxlength="30" autocomplete="off"></label></div>
  <label>시험 참여 코드 (교사가 안내) <input id="examCode" type="password" placeholder="시험 참여 코드" autocomplete="off" maxlength="50"></label><div class="actions"><button class="primary" id="start">시험 시작</button></div><p class="tiny">한 문제씩 출제되며, AI가 읽은 답안만 확인할 수 있습니다. 실제 채점은 교사용 서버에서 처리합니다.</p>
